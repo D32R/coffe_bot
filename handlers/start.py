@@ -6,12 +6,12 @@ router = Router()
 
 @router.message(F.text == "/start")
 async def start(m: Message, db, config):
-    # авто-регистрация: админы из ADMIN_IDS -> admin, остальные -> staff (или запретить и добавлять только админом)
-    role = "admin" if m.from_user.id in config.ADMIN_IDS else "staff"
-    await db.ensure_user(m.from_user.id, m.from_user.username, role)
-    await m.answer("Меню кофейных точек:", reply_markup=main_kb())
 
-@router.callback_query(F.data == "back_main")
-async def back_main(c: CallbackQuery):
-    await c.message.edit_text("Меню кофейных точек:", reply_markup=main_kb())
-    await c.answer()
+    if m.from_user.id not in config.ADMIN_IDS:
+        await m.answer("❌ У вас нет доступа к этому боту.")
+        return
+
+    # регистрируем админа в базе
+    await db.ensure_user(m.from_user.id, m.from_user.username, "admin")
+
+    await m.answer("✅ Доступ разрешён.\n\nМеню кофейных точек:", reply_markup=main_kb())
