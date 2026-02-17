@@ -1,14 +1,8 @@
+-- ====== TABLES ======
+
 CREATE TABLE IF NOT EXISTS machines (
   id SERIAL PRIMARY KEY,
   name TEXT UNIQUE NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS users (
-  telegram_id BIGINT PRIMARY KEY,
-  username TEXT,
-  role TEXT NOT NULL CHECK (role IN ('admin','staff')),
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS inventory (
@@ -28,10 +22,11 @@ CREATE TABLE IF NOT EXISTS machine_status (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Логи склада (без users / без FK на changed_by)
 CREATE TABLE IF NOT EXISTS inventory_log (
   id BIGSERIAL PRIMARY KEY,
   machine_id INT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
-  changed_by BIGINT NOT NULL REFERENCES users(telegram_id),
+  changed_by BIGINT NOT NULL,
   changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   action TEXT NOT NULL CHECK (action IN ('ADD','SUB')),
   item TEXT NOT NULL CHECK (item IN ('cups','lids','milk','chocolate','coffee')),
@@ -39,21 +34,23 @@ CREATE TABLE IF NOT EXISTS inventory_log (
   comment TEXT
 );
 
+-- Логи дат (без users / без FK на changed_by)
 CREATE TABLE IF NOT EXISTS status_log (
   id BIGSERIAL PRIMARY KEY,
   machine_id INT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
-  changed_by BIGINT NOT NULL REFERENCES users(telegram_id),
+  changed_by BIGINT NOT NULL,
   changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   field TEXT NOT NULL CHECK (field IN ('SERVICE','WATER')),
   new_date DATE NOT NULL
 );
 
--- 4 точки
+-- ====== INIT 4 MACHINES ======
+
 INSERT INTO machines(name) VALUES
   ('КЕРУЕН'), ('АДЕЛИЯ'), ('ИНМАРТ'), ('ДЕКО')
 ON CONFLICT (name) DO NOTHING;
 
--- пустой склад и статус
+-- Пустой склад и статус для всех точек
 INSERT INTO inventory(machine_id)
 SELECT id FROM machines
 ON CONFLICT (machine_id) DO NOTHING;
