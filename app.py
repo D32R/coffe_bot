@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramBadRequest
 
 import config
 from db import DB
@@ -26,8 +27,18 @@ def fmt_status(row) -> str:
     )
 
 
+async def safe_edit(c: CallbackQuery, text: str, reply_markup=None):
+    """Чтобы не падало на message is not modified"""
+    try:
+        await c.message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            pass
+        else:
+            await c.message.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
+
+
 async def main():
-    # Базовые проверки env
     if not config.BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN is empty")
     if not config.DATABASE_URL:
@@ -41,7 +52,7 @@ async def main():
     db = DB(config.DATABASE_URL)
     await db.connect()
 
-    # Автоприменение schema.sql при старте (чтобы не запускать руками psql)
+    # Накатываем схему при старте
     schema_path = Path(__file__).with_name("schema.sql")
     await db.apply_schema(schema_path.read_text(encoding="utf-8"))
 
@@ -50,7 +61,6 @@ async def main():
     async def admin_only_middleware(handler, event, data):
         user = data.get("event_from_user")
         if user and user.id not in config.ADMIN_IDS:
-            # если это callback, покажем алерт
             cq = getattr(event, "callback_query", None)
             if cq:
                 await cq.answer("❌ Нет доступа", show_alert=True)
@@ -58,7 +68,7 @@ async def main():
                 msg = getattr(event, "message", None)
                 if msg:
                     await msg.answer("❌ У вас нет доступа к этому боту.")
-            return  # блокируем полностью
+            return
         return await handler(event, data)
 
     # ===== /start =====
@@ -66,20 +76,20 @@ async def main():
     async def start(m: Message):
         await m.answer("Меню кофейных точек:", reply_markup=main_kb())
 
-    # ===== Назад в главное меню =====
+    # ===== Главное меню =====
     @dp.callback_query(F.data == "back_main")
     async def back_main(c: CallbackQuery):
-        await c.message.edit_text("Меню кофейных точек:", reply_markup=main_kb())
+        await safe_edit(c, "Меню кофейных точек:", reply_markup=main_kb())
         await c.answer()
 
     # ===== Выбор точки =====
     @dp.callback_query(F.data == "choose_machine")
     async def choose_machine(c: CallbackQuery):
         machines = await db.list_machines()
-        await c.message.edit_text("Выбери точку:", reply_markup=machines_kb(machines))
+        await safe_edit(c, "Выбери точку:", reply_markup=machines_kb(machines))
         await c.answer()
 
-    # ===== Статус всех точек =====
+    # ===== Статус всех =====
     @dp.callback_query(F.data == "status_all")
     async def status_all(c: CallbackQuery):
         machines = await db.list_machines()
@@ -87,7 +97,7 @@ async def main():
         for m in machines:
             row = await db.get_status(m["id"])
             texts.append(fmt_status(row))
-        await c.message.edit_text("\n\n".join(texts), reply_markup=main_kb(), parse_mode="Markdown")
+        await safe_edit(c, "\n\n".join(texts), reply_markup=main_kb())
         await c.answer()
 
     # ===== Открыть точку =====
@@ -95,7 +105,7 @@ async def main():
     async def open_machine(c: CallbackQuery):
         machine_id = int(c.data.split(":")[1])
         row = await db.get_status(machine_id)
-        await c.message.edit_text(fmt_status(row), reply_markup=machine_menu_kb(machine_id), parse_mode="Markdown")
+        await safe_edit(c, fmt_status(row), reply_markup=machine_menu_kb(machine_id))
         await c.answer()
 
     # ===== Показать склад/статус (кнопка "Склад") =====
@@ -103,7 +113,7 @@ async def main():
     async def inv_show(c: CallbackQuery):
         machine_id = int(c.data.split(":")[1])
         row = await db.get_status(machine_id)
-        await c.message.edit_text(fmt_status(row), reply_markup=machine_menu_kb(machine_id), parse_mode="Markdown")
+        await safe_edit(c, fmt_status(row), reply_markup=machine_menu_kb(machine_id))
         await c.answer()
 
     # ===== Даты "сегодня" =====
@@ -112,7 +122,7 @@ async def main():
         machine_id = int(c.data.split(":")[1])
         await db.set_today(machine_id, c.from_user.id, "SERVICE")
         row = await db.get_status(machine_id)
-        await c.message.edit_text(fmt_status(row), reply_markup=machine_menu_kb(machine_id), parse_mode="Markdown")
+        await safe_edit(c, fmt_status(row), reply_markup=machine_menu_kb(machine_id))
         await c.answer("Обслуживание отмечено ✅")
 
     @dp.callback_query(F.data.startswith("today_water:"))
@@ -120,32 +130,30 @@ async def main():
         machine_id = int(c.data.split(":")[1])
         await db.set_today(machine_id, c.from_user.id, "WATER")
         row = await db.get_status(machine_id)
-        await c.message.edit_text(fmt_status(row), reply_markup=machine_menu_kb(machine_id), parse_mode="Markdown")
+        await safe_edit(c, fmt_status(row), reply_markup=machine_menu_kb(machine_id))
         await c.answer("Вода отмечена ✅")
 
     # ===== Пополнить/списать =====
     @dp.callback_query(F.data.startswith("inv_add:"))
     async def inv_add(c: CallbackQuery):
         machine_id = int(c.data.split(":")[1])
-        await c.message.edit_text("Что пополняем?", reply_markup=items_kb("add_item", machine_id))
+        await safe_edit(c, "Что пополняем?", reply_markup=items_kb("add_item", machine_id))
         await c.answer()
 
     @dp.callback_query(F.data.startswith("inv_sub:"))
     async def inv_sub(c: CallbackQuery):
         machine_id = int(c.data.split(":")[1])
-        await c.message.edit_text("Что списываем?", reply_markup=items_kb("sub_item", machine_id))
+        await safe_edit(c, "Что списываем?", reply_markup=items_kb("sub_item", machine_id))
         await c.answer()
 
-    # Выбор позиции склада -> ввод количества
     @dp.callback_query(F.data.startswith(("add_item:", "sub_item:")))
     async def pick_item(c: CallbackQuery, state: FSMContext):
         mode, machine_id, item = c.data.split(":")
         await state.update_data(mode=mode, machine_id=int(machine_id), item=item)
         await state.set_state(InvQty.waiting_qty)
-        await c.message.edit_text("Введи количество (целое число > 0):")
+        await safe_edit(c, "Введи количество (целое число > 0):")
         await c.answer()
 
-    # Ввод количества
     @dp.message(InvQty.waiting_qty)
     async def set_qty(m: Message, state: FSMContext):
         try:
