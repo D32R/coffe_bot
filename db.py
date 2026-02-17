@@ -1,7 +1,11 @@
 import asyncpg
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 ALLOWED_ITEMS = {"cups", "lids", "milk", "chocolate", "coffee"}
+
+TZ = ZoneInfo("Asia/Aqtobe")
+
 
 class DB:
     def __init__(self, dsn: str):
@@ -14,6 +18,12 @@ class DB:
     async def close(self):
         if self.pool:
             await self.pool.close()
+
+    async def apply_schema(self, sql_text: str):
+        """Запуск schema.sql из кода (при старте)"""
+        assert self.pool
+        async with self.pool.acquire() as conn:
+            await conn.execute(sql_text)
 
     async def list_machines(self):
         assert self.pool
@@ -34,8 +44,12 @@ class DB:
         )
 
     async def set_today(self, machine_id: int, by: int, field: str):
+        """
+        field: 'SERVICE' or 'WATER'
+        """
         assert self.pool
-        today = date.today()
+        today = datetime.now(TZ).date()
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 if field == "SERVICE":
@@ -57,6 +71,11 @@ class DB:
                 )
 
     async def change_inventory(self, machine_id: int, by: int, action: str, item: str, qty: int):
+        """
+        action: ADD/SUB
+        item: cups/lids/milk/chocolate/coffee
+        qty: >0
+        """
         assert self.pool
         if item not in ALLOWED_ITEMS:
             raise ValueError("Bad item")
@@ -70,7 +89,10 @@ class DB:
             async with conn.transaction():
                 # запрет минуса при списании
                 if action == "SUB":
-                    current = await conn.fetchval(f"SELECT {col} FROM inventory WHERE machine_id=$1 FOR UPDATE", machine_id)
+                    current = await conn.fetchval(
+                        f"SELECT {col} FROM inventory WHERE machine_id=$1 FOR UPDATE",
+                        machine_id
+                    )
                     if current is None or current < qty:
                         return False
 
@@ -78,6 +100,7 @@ class DB:
                     f"UPDATE inventory SET {col} = {col} + $2, updated_at=NOW() WHERE machine_id=$1",
                     machine_id, delta
                 )
+
                 await conn.execute(
                     """
                     INSERT INTO inventory_log(machine_id, changed_by, action, item, qty)
@@ -85,10 +108,5 @@ class DB:
                     """,
                     machine_id, by, action, item, qty
                 )
-        return True
 
-    async def apply_schema(self, sql_text: str):
-        """Запуск schema.sql из кода (1 раз при старте)"""
-        assert self.pool
-        async with self.pool.acquire() as conn:
-            await conn.execute(sql_text)
+        return True
