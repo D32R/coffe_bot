@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   milk INT NOT NULL DEFAULT 0,
   chocolate INT NOT NULL DEFAULT 0,
   coffee INT NOT NULL DEFAULT 0,
+  raf INT NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -29,7 +30,7 @@ CREATE TABLE IF NOT EXISTS inventory_log (
   changed_by BIGINT NOT NULL,
   changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   action TEXT NOT NULL CHECK (action IN ('ADD','SUB')),
-  item TEXT NOT NULL CHECK (item IN ('cups','lids','milk','chocolate','coffee')),
+  item TEXT NOT NULL CHECK (item IN ('cups','lids','milk','chocolate','coffee','raf')),
   qty INT NOT NULL CHECK (qty > 0),
   comment TEXT
 );
