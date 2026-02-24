@@ -24,6 +24,7 @@ def fmt_status(row) -> str:
         f"• Молоко: {row['milk']}\n"
         f"• Шоколад: {row['chocolate']}\n"
         f"• Кофе: {row['coffee']}\n"
+        f"• Раф: {row['raf']}\n"
     )
 
 
