@@ -2,8 +2,7 @@ import asyncpg
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-ALLOWED_ITEMS = {"cups", "lids", "milk", "chocolate", "coffee"}
-
+ALLOWED_ITEMS = {"cups", "lids", "milk", "chocolate", "coffee", "raf"}
 TZ = ZoneInfo("Asia/Aqtobe")
 
 
@@ -34,7 +33,7 @@ class DB:
         return await self.pool.fetchrow(
             """
             SELECT m.name, s.last_service_date, s.last_water_date,
-                   i.cups, i.lids, i.milk, i.chocolate, i.coffee
+                   i.cups, i.lids, i.milk, i.chocolate, i.coffee, i.raf
             FROM machines m
             JOIN machine_status s ON s.machine_id=m.id
             JOIN inventory i ON i.machine_id=m.id
@@ -73,7 +72,7 @@ class DB:
     async def change_inventory(self, machine_id: int, by: int, action: str, item: str, qty: int):
         """
         action: ADD/SUB
-        item: cups/lids/milk/chocolate/coffee
+        item: cups/lids/milk/chocolate/coffee/raf
         qty: >0
         """
         assert self.pool
